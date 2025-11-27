@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <title>เกมพิมพ์ตอบคำถาม</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin: 40px; }
+    .card { display: inline-block; padding: 24px; border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,0.12); min-width: 320px; }
+    h1 { margin-top: 0; }
+    .question { font-size: 20px; margin: 16px 0; }
+    input[type="text"] { width: 100%; padding: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box; }
+    button { margin-top: 12px; padding: 10px 16px; font-size: 16px; border-radius: 8px; cursor: pointer; }
+    .meta { margin-top: 12px; color: #555; }
+    .feedback { margin-top: 10px; font-weight: bold; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>เกมพิมพ์ตอบคำถาม</h1>
+    <p>พิมพ์คำตอบให้ถูกต้องเพื่อรับคะแนน — มีเวลาให้แต่ละข้อ (ค่าเริ่มต้น 15 วินาที)</p>
+
+    <div class="meta">คะแนน: <span id="score">0</span> &nbsp;|&nbsp; ข้อที่: <span id="qIndex">0</span>/<span id="qTotal">0</span></div>
+
+    <div id="quizArea">
+      <div class="question" id="question">กำลังโหลดคำถาม...</div>
+      <input type="text" id="answerInput" autocomplete="off" placeholder="พิมพ์คำตอบที่นี่..." />
+      <div class="meta">เวลาที่เหลือ: <span id="time">15</span> วินาที</div>
+      <div class="feedback" id="feedback"></div>
+      <div style="margin-top:12px">
+        <button id="submitBtn">ส่งคำตอบ</button>
+        <button id="skipBtn">ข้าม</button>
+        <button id="restartBtn" class="hidden">เริ่มใหม่</button>
+      </div>
+    </div>
+
+    <div id="resultArea" class="hidden">
+      <h2>จบรอบแล้ว 🎉</h2>
+      <p>คะแนนสุดท้าย: <span id="finalScore">0</span></p>
+      <button id="playAgain">เล่นอีกครั้ง</button>
+    </div>
+  </div>
+
+  <script>
+    // ชุดคำถามที่คุณใส่มา
+    const questions = [
+      {q: 'ปริศนา: อะไรเอ่ย เขียวเหมือนพระอินทร์ บินเหมือนนก ศรปักอก นกก็ไม่ใช่', a: 'แมลงทับ'},
+      {q: 'ปริศนา: อะไรเอ่ย เรือนสองเสา หญ้าคาสองตับ นอนไม่หลับลุกขึ้นร้องเพลง', a: 'ไก่'},
+      {q: 'ปริศนา: อะไรเอ่ย สี่ตีนเดินมา หลังคามุงกระเบื้อง', a: 'เต่า'},
+      {q: 'ปริศนา: อะไรเอ่ย เวลาเรานอนมันยืน เวลาเรายืนมันนอน', a: 'เท้า'},
+      {q: 'ปริศนา: อะไรเอ่ย บีบก้นออกปาก', a: 'ยาสีฟัน'},
+      {q: 'ปริศนา: อะไรเอ่ย เรากลืนมันอยู่ มันกลืนเราตาย', a: 'น้ำ'},
+      {q: 'ปริศนา: อะไรเอ่ย บิดหัวน้ำตาไหลคนชอบใช้กันทั่วเมือง', a: 'ก๊อกน้ำประปา'},
+      {q: 'ปริศนา: อะไรเอ่ย ไม่ใหญ่ไม่กว้างแต่บังโลกมิดติดอยู่กับตัวคน', a: 'เปลือกตา'},
+      {q: 'ปริศนา: อะไรเอ่ย ทุกคนต้องมีทุกคนต้องลืม', a: 'ตา'},
+      {q: 'ปริศนา: อะไรเอ่ย ดำแล้วขาว ยาวแล้วสั้น', a: 'กล้วย'}
+    ];
+
+    // ตั้งค่าเริ่มต้น
+    let score = 0;
+    let current = 0;
+    let timePerQuestion = 15; // วินาที
+    let remaining = timePerQuestion;
+    let timer = null;
+
+    const scoreEl = document.getElementById('score');
+    const qIndexEl = document.getElementById('qIndex');
+    const qTotalEl = document.getElementById('qTotal');
+    const questionEl = document.getElementById('question');
+    const answerInput = document.getElementById('answerInput');
+    const timeEl = document.getElementById('time');
+    const feedbackEl = document.getElementById('feedback');
+    const submitBtn = document.getElementById('submitBtn');
+    const skipBtn = document.getElementById('skipBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const resultArea = document.getElementById('resultArea');
+    const quizArea = document.getElementById('quizArea');
+    const finalScoreEl = document.getElementById('finalScore');
+    const playAgain = document.getElementById('playAgain');
+
+    qTotalEl.textContent = questions.length;
+
+    function startQuestion() {
+      if (current >= questions.length) {
+        endGame();
+        return;
+      }
+      const item = questions[current];
+      questionEl.textContent = item.q;
+      qIndexEl.textContent = current + 1;
+      answerInput.value = '';
+      feedbackEl.textContent = '';
+      remaining = timePerQuestion;
+      timeEl.textContent = remaining;
+      answerInput.focus();
+
+      if (timer) clearInterval(timer);
+      timer = setInterval(() => {
+        remaining--;
+        timeEl.textContent = remaining;
+        if (remaining <= 0) {
+          clearInterval(timer);
+          feedbackEl.textContent = 'หมดเวลา! คำตอบที่ถูกต้อง: ' + item.a;
+          feedbackEl.style.color = 'red';
+          // เลื่อนไปข้อถัดไปหลัง 1.5 วินาที
+          setTimeout(() => {
+            current++;
+            startQuestion();
+          }, 1500);
+        }
+      }, 1000);
+    }
+
+    function checkAnswer() {
+      if (current >= questions.length) return;
+      const user = answerInput.value.trim();
+      const correct = questions[current].a.trim();
+      if (user.length === 0) {
+        feedbackEl.textContent = 'กรุณาพิมพ์คำตอบก่อนส่ง';
+        feedbackEl.style.color = 'orange';
+        return;
+      }
+      if (user.toLowerCase() === correct.toLowerCase()) {
+        score += 1;
+        scoreEl.textContent = score;
+        feedbackEl.textContent = 'ถูกต้อง! +1';
+        feedbackEl.style.color = 'green';
+      } else {
+        feedbackEl.textContent = 'ผิด! คำตอบที่ถูกต้อง: ' + correct;
+        feedbackEl.style.color = 'red';
+      }
+      clearInterval(timer);
+      setTimeout(() => {
+        current++;
+        startQuestion();
+      }, 1200);
+    }
+
+    function skipQuestion() {
+      clearInterval(timer);
+      feedbackEl.textContent = 'ข้ามคำถาม — คำตอบที่ถูกคือ: ' + questions[current].a;
+      feedbackEl.style.color = '#555';
+      setTimeout(() => {
+        current++;
+        startQuestion();
+      }, 1000);
+    }
+
+    function endGame() {
+      clearInterval(timer);
+      quizArea.classList.add('hidden');
+      resultArea.classList.remove('hidden');
+      finalScoreEl.textContent = score;
+      restartBtn.classList.remove('hidden');
+    }
+
+    function restart() {
+      score = 0;
+      current = 0;
+      scoreEl.textContent = score;
+      quizArea.classList.remove('hidden');
+      resultArea.classList.add('hidden');
+      restartBtn.classList.add('hidden');
+      startQuestion();
+    }
+
+    submitBtn.addEventListener('click', checkAnswer);
+    skipBtn.addEventListener('click', skipQuestion);
+    restartBtn.addEventListener('click', restart);
+    playAgain.addEventListener('click', restart);
+
+    // เริ่มเกมครั้งแรก
+    startQuestion();
+  </script>
+</body>
+</html>
